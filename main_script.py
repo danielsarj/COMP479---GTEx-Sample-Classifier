@@ -2,8 +2,10 @@ import pandas as pd
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import GridSearchCV
-from sklearn.metrics import classification_report, confusion_matrix 
+from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 # read annotation file and get only the column we need - sample and tissue name
 anno_file = pd.read_csv('GTEx_Analysis_v8_Annotations_SampleAttributesDS.txt', sep='\t')
@@ -36,7 +38,7 @@ exp_file.drop(exp_file.index[0], inplace = True)
 
 # turn row names into column so we can merge afterwards
 exp_file = exp_file.rename_axis('SAMPID').reset_index()
- 
+
 # merging annotation and expression data frames by sample ID
 merged_file = pd.merge(anno_file, exp_file, how='inner', on='SAMPID')
 
@@ -70,11 +72,38 @@ print(logistic_model.best_params_)
 # predicting on test data
 predictions = logistic_model.predict(test_data[:,1:])
 print(classification_report(test_data[:,0].ravel(), predictions))
-predictions.to_csv('predicted_labels.txt', index = False)
-test_data[:,0].to_csv('actual_labels.txt', index = False)
+pd.DataFrame(predictions).to_csv('predicted_labels.txt', index = False)
+pd.DataFrame(test_data[:,0]).to_csv('actual_labels.txt', index = False)
 
 # running a PCA
 pca = PCA(n_components=2)
 principalComponents = pca.fit_transform(test_data[:,1:])
 principalDf = pd.DataFrame(data = principalComponents, columns = ['PC1', 'PC2'])
 principalDf.to_csv('testdata_firsttwoPCs.txt', index = False)
+
+# scatter plot using PCs
+pcs = pd.read_csv('testdata_firsttwoPCs.txt', sep=',')
+actual_labels = pd.read_csv('actual_labels.txt', sep=',').astype('int64')
+actual_labels.columns = ['SMTS_ID']
+predicted_labels = pd.read_csv('predicted_labels.txt', sep=',').astype('int64')
+predicted_labels.columns = ['SMTS_ID']
+tissue_code = pd.read_csv('tissue_codes.txt', sep=',')
+
+# merging labels to the classes
+actual_labels = pd.merge(actual_labels, tissue_code, how='left', on='SMTS_ID', sort=False)
+predicted_labels = pd.merge(predicted_labels, tissue_code, how='left', on='SMTS_ID', sort=False)
+all_labels = pd.concat([actual_labels, predicted_labels], axis=1)
+all_labels.columns = ['actual_ID','actual_label','predicted_ID','prediced_label']
+all_labels = all_labels[['actual_label', 'prediced_label']]
+
+# joining PCs & making a scatter plot
+pcs_w_labels = pd.concat([pcs, all_labels], axis=1)
+sns.scatterplot(x='PC1', y='PC2', data=pcs_w_labels, hue='actual_label')
+plt.legend(bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
+plt.title('PCs colored by actual label')
+plt.savefig('PCscatterplot_actuallabels.png', dpi=300, bbox_inches='tight')
+plt.clf()
+sns.scatterplot(x='PC1', y='PC2', data=pcs_w_labels, hue='prediced_label')
+plt.legend(bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
+plt.title('PCs colored by predicted label')
+plt.savefig('PCscatterplot_predicedlabels.png', dpi=300, bbox_inches='tight')
